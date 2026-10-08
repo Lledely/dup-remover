@@ -1,8 +1,11 @@
+//! Argument definitions and checked parsing of file sizes and worker counts.
+
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 use dup_remover::ScanOptions;
 
+/// Top-level command-line arguments.
 #[derive(Debug, Parser)]
 #[command(
     name = "dup-remover",
@@ -12,16 +15,19 @@ use dup_remover::ScanOptions;
     arg_required_else_help = true
 )]
 pub struct Cli {
+    /// Operation selected by the user.
     #[command(subcommand)]
     pub command: Command,
 }
 
+/// Supported command-line operations.
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Рекурсивно найти дубликаты и показать отчёт
     Scan(ScanArgs),
 }
 
+/// Paths and resource limits for a directory scan.
 #[derive(Debug, Args)]
 pub struct ScanArgs {
     /// Папка для сканирования
@@ -45,6 +51,9 @@ fn default_jobs() -> usize {
     ScanOptions::default().jobs
 }
 
+/// Parse a positive worker count that fits the current platform's `usize`.
+///
+/// Zero, negative values, non-integers, and overflow are rejected before scanning.
 fn parse_jobs(value: &str) -> Result<usize, String> {
     let jobs = value
         .parse::<usize>()
@@ -55,6 +64,11 @@ fn parse_jobs(value: &str) -> Result<usize, String> {
     Ok(jobs)
 }
 
+/// Convert an integer byte count or supported size suffix into bytes.
+///
+/// Decimal units use powers of 1000 and binary units use powers of 1024; suffixes
+/// are case-insensitive. Missing digits, unsupported suffixes, and arithmetic
+/// overflow return a user-facing validation error without truncation or wrapping.
 fn parse_min_size(value: &str) -> Result<u64, String> {
     let digits = value.bytes().take_while(u8::is_ascii_digit).count();
     if digits == 0 {

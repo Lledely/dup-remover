@@ -1,3 +1,5 @@
+//! Integration tests for CLI arguments, reports, exit codes, and file preservation.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
