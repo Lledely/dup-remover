@@ -1,3 +1,5 @@
+//! Unit tests for streaming hashing and changed-file detection.
+
 use std::path::PathBuf;
 
 use super::super::snapshot::FileSnapshot;

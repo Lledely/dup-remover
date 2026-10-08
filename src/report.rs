@@ -83,4 +83,5 @@ pub fn write_json(path: &Path, report: &ScanReport) -> io::Result<()> {
 }
 
 #[cfg(test)]
+#[path = "../tests/unit/report.rs"]
 mod tests;

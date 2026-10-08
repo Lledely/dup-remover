@@ -99,19 +99,7 @@ impl ScanReport {
 /// Returns an error if `jobs` is zero, the root is not a readable directory, or a
 /// hashing worker panics. A symbolic link supplied as the root is also rejected.
 ///
-/// # Examples
-///
-/// ```
-/// use dup_remover::{ScanOptions, scan};
-///
-/// let directory = tempfile::tempdir()?;
-/// std::fs::write(directory.path().join("original.txt"), b"rust")?;
-/// std::fs::write(directory.path().join("copy.txt"), b"rust")?;
-/// let report = scan(directory.path(), &ScanOptions { min_size: 0, jobs: 2 })?;
-/// assert_eq!(report.duplicate_files(), 1);
-/// assert_eq!(report.reclaimable_bytes(), 4);
-/// # Ok::<(), std::io::Error>(())
-/// ```
+#[doc = include_str!("../tests/docs/scan.md")]
 pub fn scan(root: impl AsRef<Path>, options: &ScanOptions) -> io::Result<ScanReport> {
     scanner::scan_directory(root.as_ref(), options)
 }
