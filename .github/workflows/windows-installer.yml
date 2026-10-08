@@ -1,0 +1,83 @@
+name: Windows Installer
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Build and test Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add x86_64-pc-windows-msvc
+      - name: Validate release tag
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $metadata = cargo metadata --no-deps --locked --format-version 1 | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed.' }
+            $version = @($metadata.packages | Where-Object name -EQ 'dup-remover')[0].version
+            if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Release tag must match Cargo.toml version.' }
+          }
+      - name: Build installer
+        shell: pwsh
+        run: ./scripts/build-windows-installer.ps1 -BootstrapCompiler
+      - name: Test install, CLI, PATH and uninstall
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 7\ISCC.exe"
+          )
+          $compiler = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $compiler) { throw 'Inno Setup compiler was not found after build.' }
+          ./scripts/test-windows-installer.ps1 -CompilerPath $compiler
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dup-remover-windows-x64
+          path: dist/*
+          if-no-files-found: error
+      - name: Upload installer logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-test-logs
+          path: target/installer-smoke/**/*.log
+          if-no-files-found: ignore
+
+  release:
+    name: Publish Windows installer
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dup-remover-windows-x64
+          path: dist
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
+            --title "dup-remover $GITHUB_REF_NAME" \
+            --notes-file packaging/windows/release-notes.md
