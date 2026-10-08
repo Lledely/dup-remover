@@ -1,3 +1,5 @@
+//! Unit tests for output formatting, JSON creation, and writer failures.
+
 use std::fs;
 use std::path::PathBuf;
 

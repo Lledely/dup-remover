@@ -6,7 +6,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(git -C "$script_dir" rev-parse --show-toplevel)"
 mkdir -p "$repository_root/target/ci-history-tests"
 fixture="$(mktemp -d "$repository_root/target/ci-history-tests/run.XXXXXXXX")"
-guard="$script_dir/check-pr-base.sh"
+guard="$repository_root/scripts/check-pr-base.sh"
 
 git -C "$fixture" init --quiet --initial-branch=master
 git -C "$fixture" config user.name 'CI history tests'

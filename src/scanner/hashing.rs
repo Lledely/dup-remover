@@ -122,4 +122,5 @@ fn hash_file(candidate: &Candidate) -> io::Result<String> {
 }
 
 #[cfg(test)]
+#[path = "../../tests/unit/hashing.rs"]
 mod tests;
