@@ -1,3 +1,5 @@
+//! Command-line entry point for scanning directories and writing reports.
+
 mod cli;
 mod report;
 
@@ -9,6 +11,7 @@ use dup_remover::{ScanOptions, scan};
 
 use cli::{Cli, Command};
 
+/// Parse arguments and translate application errors into stderr and an exit code.
 fn main() -> ExitCode {
     match run(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
@@ -19,6 +22,10 @@ fn main() -> ExitCode {
     }
 }
 
+/// Execute the requested scan, save an optional JSON report, and display the result.
+///
+/// JSON is created only after scanning succeeds and before reporting its filename
+/// to stdout. Scan and output errors include the operation and affected path.
 fn run(cli: Cli) -> Result<(), String> {
     match cli.command {
         Command::Scan(args) => {
@@ -39,15 +46,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 })?;
             }
 
-            let mut stdout = io::stdout().lock();
-            report::write_text(&result, &mut stdout)
-                .map_err(|error| format!("Не удалось вывести отчёт: {error}"))?;
-            if let Some(path) = &args.output {
-                writeln!(stdout, "JSON-отчёт сохранён: {}", path.display())
-                    .map_err(|error| format!("Не удалось вывести отчёт: {error}"))?;
-            }
-            stdout
-                .flush()
+            report::write_output(&result, args.output.as_deref(), io::stdout().lock())
                 .map_err(|error| format!("Не удалось вывести отчёт: {error}"))
         }
     }
