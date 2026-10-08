@@ -1,0 +1,33 @@
+﻿dup-remover для Windows
+
+После установки откройте НОВОЕ окно PowerShell или Windows Terminal:
+
+  dup-remover --help
+  dup-remover scan "C:\Users\Name\Downloads"
+  dup-remover scan "C:\Users\Name\Downloads" --min-size 1MB --jobs 4 --output report.json
+
+Замените путь на существующую папку. Для JSON-отчёта используйте новое имя файла.
+Программа ищет дубликаты и показывает отчёт; файлы остаются на месте.
+
+Если добавление в PATH отключено, откройте PowerShell в папке установки:
+
+  .\dup-remover.exe --help
+  .\dup-remover.exe scan "C:\Users\Name\Downloads"
+
+Папка по умолчанию: %LOCALAPPDATA%\Programs\dup-remover.
+Для удаления откройте «Параметры» → «Приложения» → dup-remover → «Удалить».
+Rust и Cargo для запуска установленной программы не нужны.
+
+------------------------------------------------------------
+dup-remover for Windows
+
+Open a NEW PowerShell or Windows Terminal window after installation:
+
+  dup-remover --help
+  dup-remover scan "C:\Users\Name\Downloads"
+
+Replace the path with an existing folder. Use a new filename for JSON reports.
+If PATH was disabled, run .\dup-remover.exe from the installation folder.
+Uninstall through Windows Settings > Apps > dup-remover.
+
+Source and documentation: https://github.com/Lledely/dup-remover

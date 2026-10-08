@@ -5,6 +5,34 @@
 дубликатов и оценивает объём лишних копий. При необходимости результат сохраняется
 в JSON. Файлы не удаляются и не перемещаются.
 
+## Установка в Windows
+
+Скачайте `dup-remover-<версия>-windows-x64-setup.exe` из
+[GitHub Releases](https://github.com/Lledely/dup-remover/releases/latest) и запустите его.
+Поддерживаются Windows 10/11 x64. Rust, Cargo и отдельная установка
+Visual C++ Redistributable для запуска готовой программы не нужны.
+
+Установщик работает для текущего пользователя без запроса прав администратора.
+Папка по умолчанию — `%LOCALAPPDATA%\Programs\dup-remover`. Опция добавления
+в пользовательский `PATH` включена по умолчанию; её можно отключить.
+
+После установки откройте **новое** окно PowerShell или Windows Terminal:
+
+```powershell
+dup-remover --help
+dup-remover scan "C:\Users\Name\Downloads" --min-size 1MB --jobs 4 --output report.json
+```
+
+Если добавление в `PATH` отключено, запускайте `.\dup-remover.exe` из папки установки.
+В меню «Пуск» доступна текстовая инструкция. Для удаления откройте
+«Параметры → Приложения → dup-remover → Удалить».
+Удаление убирает запись `PATH`, добавленную установщиком, сохраняя существующие
+записи пользователя и созданные им файлы.
+
+Установщик не подписан сертификатом Authenticode. В релизе также публикуется
+файл `.sha256` с контрольной суммой; её можно проверить командой
+`Get-FileHash .\dup-remover-<версия>-windows-x64-setup.exe -Algorithm SHA256`.
+
 ## Быстрый старт
 
 Понадобятся Rust и Cargo со стабильной поддержкой edition 2024. Проект работает
@@ -131,3 +159,41 @@ cargo test --locked --all-targets
 и успешных проверок PR вливается через **Rebase and merge**, а issue закрывается
 автоматически. Зависимую ветку перед финальными проверками обновляют через
 `git fetch origin` и `git rebase origin/master`.
+
+### Сборка установщика
+
+Для сборки требуются Windows, стабильный Rust с целью `x86_64-pc-windows-msvc`,
+MSVC Build Tools / Windows SDK и [Inno Setup 6 или 7](https://jrsoftware.org/isdl.php).
+Из корня репозитория:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1
+```
+
+Версия читается из `Cargo.toml`; готовый `.exe` и его `.sha256` появляются в `dist`.
+Runtime C/C++ линкуется статически для устанавливаемой программы. Сборка использует
+`cargo build --release --locked --target x86_64-pc-windows-msvc`.
+Если компилятор Inno Setup установлен в нестандартную папку, передайте
+`-CompilerPath "C:\путь\к\ISCC.exe"`. Опция `-BootstrapCompiler` при отсутствии
+компилятора загрузит Inno Setup 6.7.3 из официального релиза, проверит закреплённую
+контрольную сумму и установит его для текущего пользователя.
+Параметр `-ExecutionPolicy Bypass` действует только для этого процесса PowerShell.
+
+Проверка установщика (после сборки):
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-windows-installer.ps1 -CompilerPath "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+```
+
+Тест собирает отдельный установщик с уникальным AppId, временной папкой
+и изолированным ключом реестра вместо рабочего `PATH`. Проверяются установка,
+повторная установка, работа CLI, сохранение типа и сторонних записей `PATH`,
+отключение опции и удаление. Рабочий `PATH` и установленная пользовательская
+копия программы остаются без изменений. Диагностические файлы находятся
+в `target/installer-smoke`.
+
+Workflow **Windows Installer** собирает и проверяет установщик для PR и `master`,
+сохраняя артефакт `dup-remover-windows-x64`. После публикации тега `v<версия>`,
+совпадающего с версией в `Cargo.toml`, проверенный установщик автоматически
+появляется в GitHub Releases. Изменения установщика ведутся в
+[issue #5](https://github.com/Lledely/dup-remover/issues/5).
