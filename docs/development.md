@@ -3,6 +3,27 @@
 Правила работы с Git, issue, PR и TDD находятся в [AGENTS.md](../AGENTS.md).
 Контракт библиотеки описан в [architecture.md](architecture.md).
 
+## Локальные проверки Rust
+
+```sh
+cargo fmt --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --all-targets
+cargo test --locked --doc
+```
+
+Cargo запрещает `unsafe_code` для всех собственных целей пакета, включая тесты,
+и требует rustdoc-комментарии для публичного API. Для просмотра документации
+вместе с внутренними функциями:
+
+```sh
+cargo doc --locked --no-deps --document-private-items --open
+```
+
+В CI документация также собирается с `RUSTDOCFLAGS="-D warnings"`. Тесты
+проверяют библиотеку на временных папках и реальные запуски CLI: группы,
+фильтрацию, JSON, ошибки и сохранность исходных файлов.
+
 ## Единый CI
 
 Workflow `.github/workflows/ci.yml` запускается для PR в `master` и push в `master`.
@@ -56,3 +77,35 @@ Workflow проверяет исходники указанного тега н�
 ```sh
 gh workflow run ci.yml --ref master
 ```
+
+## Локальная сборка и проверка установщика
+
+Для сборки требуются Windows, стабильный Rust с целью `x86_64-pc-windows-msvc`,
+MSVC Build Tools / Windows SDK и [Inno Setup 6 или 7](https://jrsoftware.org/isdl.php).
+Из корня репозитория:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1
+```
+
+Версия читается из `Cargo.toml`; готовый `.exe` и его `.sha256` появляются в `dist`.
+Runtime C/C++ линкуется статически для устанавливаемой программы. Сборка использует
+`cargo build --release --locked --target x86_64-pc-windows-msvc`.
+Если компилятор Inno Setup установлен в нестандартную папку, передайте
+`-CompilerPath "C:\путь\к\ISCC.exe"`. Опция `-BootstrapCompiler` при отсутствии
+компилятора загрузит Inno Setup 6.7.3 из официального релиза, проверит закреплённую
+контрольную сумму и установит его для текущего пользователя.
+Параметр `-ExecutionPolicy Bypass` действует только для этого процесса PowerShell.
+
+Проверка установщика (после сборки):
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-windows-installer.ps1 -CompilerPath "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+```
+
+Тест собирает отдельный установщик с уникальным AppId, временной папкой
+и изолированным ключом реестра вместо рабочего `PATH`. Проверяются установка,
+повторная установка, работа CLI, сохранение типа и сторонних записей `PATH`,
+отключение опции и удаление. Рабочий `PATH` и установленная пользовательская
+копия программы остаются без изменений. Диагностические файлы находятся
+в `target/installer-smoke`.
