@@ -32,9 +32,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.release_tag || github.sha }}
-      - name: Test PR history guard
-        if: runner.os == 'Linux'
-        run: bash ./scripts/test-pr-base.sh
       - name: Install stable Rust
         shell: bash
         run: |
@@ -44,14 +41,38 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Run Clippy
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
-      - name: Run tests
-        run: cargo test --locked --all-targets
-      - name: Test documentation examples
-        run: cargo test --locked --doc
       - name: Build source documentation
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --locked --no-deps --document-private-items
+
+  tests:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.sha }}
+      - name: Install stable Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run all unit and integration tests
+        run: cargo test --locked --all-targets --no-fail-fast
+      - name: Test documentation examples
+        if: ${{ !cancelled() }}
+        run: cargo test --locked --doc
+      - name: Test the required CI result gate
+        if: runner.os == 'Linux' && !cancelled()
+        run: bash ./tests/ci/check-ci-results.sh
+      - name: Test PR history guard
+        if: runner.os == 'Linux' && !cancelled()
+        run: bash ./tests/ci/pr-base.sh
 
   history:
     name: PR rebase
@@ -73,19 +94,19 @@ jobs:
   ci:
     name: CI
     if: always()
-    needs: [checks, history]
+    needs: [checks, tests, history]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.sha }}
       - name: Require all checks to succeed
         env:
           CHECKS_RESULT: ${{ needs.checks.result }}
+          TESTS_RESULT: ${{ needs.tests.result }}
           HISTORY_RESULT: ${{ needs.history.result }}
           EVENT_NAME: ${{ github.event_name }}
-        run: |
-          test "$CHECKS_RESULT" = success
-          if [ "$EVENT_NAME" = pull_request ]; then
-            test "$HISTORY_RESULT" = success
-          fi
+        run: bash ./scripts/check-ci-results.sh
 
   package:
     name: Build and test requested Windows installer
