@@ -1,13 +1,24 @@
-name: Rust CI
+name: CI
 
 on:
   push:
     branches: [master]
   pull_request:
     branches: [master]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Publish a requested release from an existing version tag (for example v0.1.1); leave empty to run checks only'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.release_tag || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 jobs:
   checks:
@@ -19,6 +30,11 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.sha }}
+      - name: Test PR history guard
+        if: runner.os == 'Linux'
+        run: bash ./scripts/test-pr-base.sh
       - name: Install stable Rust
         shell: bash
         run: |
@@ -30,3 +46,130 @@ jobs:
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - name: Run tests
         run: cargo test --locked --all-targets
+      - name: Test documentation examples
+        run: cargo test --locked --doc
+      - name: Build source documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked --no-deps --document-private-items
+
+  history:
+    name: PR rebase
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Require a linear PR branch based on current master
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          bash ./scripts/check-pr-base.sh FETCH_HEAD "$PR_HEAD_SHA"
+
+  ci:
+    name: CI
+    if: always()
+    needs: [checks, history]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all checks to succeed
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          HISTORY_RESULT: ${{ needs.history.result }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          test "$CHECKS_RESULT" = success
+          if [ "$EVENT_NAME" = pull_request ]; then
+            test "$HISTORY_RESULT" = success
+          fi
+
+  package:
+    name: Build and test requested Windows installer
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    needs: ci
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add x86_64-pc-windows-msvc
+      - name: Validate the requested version tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') { throw 'Use a version tag such as v0.1.1.' }
+          $metadata = cargo metadata --no-deps --locked --format-version 1 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed.' }
+          $version = @($metadata.packages | Where-Object name -EQ 'dup-remover')[0].version
+          if ($env:RELEASE_TAG -ne "v$version") { throw 'Release tag must match Cargo.toml version.' }
+          $tagCommit = git rev-parse --verify "refs/tags/$($env:RELEASE_TAG)^{commit}"
+          if ($LASTEXITCODE -ne 0) { throw 'The release tag must already exist.' }
+          $checkoutCommit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $checkoutCommit -ne $tagCommit) { throw 'Checkout does not match the release tag.' }
+          git fetch --no-tags origin master
+          if ($LASTEXITCODE -ne 0) { throw 'Could not fetch current master.' }
+          git merge-base --is-ancestor $tagCommit FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'The release tag must belong to master history.' }
+      - name: Build installer
+        shell: pwsh
+        run: ./scripts/build-windows-installer.ps1 -BootstrapCompiler
+      - name: Test install, CLI, PATH and uninstall
+        shell: pwsh
+        run: |
+          $candidates = @(
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 7\ISCC.exe"
+          )
+          $compiler = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $compiler) { throw 'Inno Setup compiler was not found after build.' }
+          ./scripts/test-windows-installer.ps1 -CompilerPath $compiler
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dup-remover-windows-x64
+          path: dist/*
+          if-no-files-found: error
+      - name: Upload installer logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-test-logs
+          path: target/installer-smoke/**/*.log
+          if-no-files-found: ignore
+
+  release:
+    name: Publish requested release
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: dup-remover-windows-x64
+          path: dist
+      - name: Publish the verified installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/* --verify-tag \
+            --title "dup-remover $RELEASE_TAG" \
+            --notes-file packaging/windows/release-notes.md
