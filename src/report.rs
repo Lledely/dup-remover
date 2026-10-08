@@ -163,6 +163,42 @@ mod tests {
         assert!(write_text(&sample_report(), FailingWriter).is_err());
     }
 
+    #[test]
+    fn console_output_mentions_only_a_saved_json_report() {
+        let mut output = Vec::new();
+        write_output(
+            &sample_report(),
+            Some(Path::new("report.json")),
+            &mut output,
+        )
+        .unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("Просканировано файлов: 4"));
+        assert!(output.ends_with("JSON-отчёт сохранён: report.json\n"));
+
+        let mut output = Vec::new();
+        write_output(&sample_report(), None, &mut output).unwrap();
+        assert!(!String::from_utf8(output).unwrap().contains("JSON-отчёт"));
+    }
+
+    #[test]
+    fn console_output_propagates_flush_errors() {
+        struct FlushFailure;
+
+        impl Write for FlushFailure {
+            fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+                Ok(buffer.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Err(io::Error::other("flush failed"))
+            }
+        }
+
+        let error = write_output(&sample_report(), None, FlushFailure).unwrap_err();
+        assert_eq!(error.to_string(), "flush failed");
+    }
+
     #[cfg(unix)]
     #[test]
     fn non_utf8_path_does_not_create_a_json_file() {
