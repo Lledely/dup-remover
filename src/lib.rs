@@ -1,9 +1,16 @@
-//! Shared scan options and serializable results for the duplicate finder.
+//! Recursive duplicate discovery with bounded parallel hashing.
+//!
+//! The scanner only reads regular files and skips symbolic links. Hard links are
+//! reported as separate paths, so the estimated reclaimable size does not measure
+//! physical disk allocation. Metadata checks reject detectable file changes, but
+//! a scan is not an atomic snapshot of a directory being modified concurrently.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+
+mod scanner;
 
 #[derive(Debug, Clone)]
 pub struct ScanOptions {
@@ -64,10 +71,12 @@ impl ScanReport {
     }
 }
 
-/// Scan a directory recursively. The implementation is delivered in the scanner PR.
-pub fn scan(_root: impl AsRef<Path>, _options: &ScanOptions) -> io::Result<ScanReport> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "the scan engine is being implemented",
-    ))
+/// Find duplicate regular files recursively, without traversing symbolic links.
+///
+/// An invalid or unreadable root and zero worker count return an error. Failures
+/// involving individual entries are included in the report's warnings instead.
+/// Files with unique sizes do not need to be read. Results are sorted by size and
+/// hash, paths within groups, and warning path/message for reproducibility.
+pub fn scan(root: impl AsRef<Path>, options: &ScanOptions) -> io::Result<ScanReport> {
+    scanner::scan_directory(root.as_ref(), options)
 }
