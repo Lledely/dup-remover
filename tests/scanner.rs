@@ -1,3 +1,5 @@
+//! Integration tests for directory traversal, filtering, and duplicate discovery.
+
 use std::fs;
 use std::io;
 use std::path::Path;
